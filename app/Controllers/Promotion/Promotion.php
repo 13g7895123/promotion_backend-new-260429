@@ -7,6 +7,7 @@ use CodeIgniter\API\ResponseTrait;
 use App\Models\Promotion\M_Promotion;
 use App\Models\Promotion\M_User;
 use App\Models\M_Common;
+use App\Models\Promotion\M_BatchAuditJob;
 
 class Promotion extends BaseController
 {
@@ -297,27 +298,42 @@ class Promotion extends BaseController
     }
 
     /**
-     * 批次審核
-     * @return void
+     * 批次審核（非同步入列）
+     *
+     * 將審核任務寫入 batch_audit_jobs 佇列，由 docker scheduler
+     * 每分鐘執行 `php spark batch-audit:process` 來消費。
+     * API 立即回傳 job_id，前端可透過 GET batch-audit/jobs/:id 查詢進度。
      */
     public function batchAudit()
     {
-        $postData = $this->request->getJson(True);
-        $promotionId = $postData['id'];
-        $status = $postData['status'];
+        $postData    = $this->request->getJson(true);
+        $promotionId = $postData['id']     ?? [];
+        $status      = $postData['status'] ?? '';
 
-        $M_Promotion = new M_Promotion();
-        $M_Promotion->batchAuditV3($promotionId, $status);
-        \App\Libraries\AuditProfiler::mark('batch_audit_v3_done');
+        if (empty($promotionId) || !is_array($promotionId)) {
+            return $this->response->setStatusCode(400)->setJSON([
+                'success' => false,
+                'msg'     => 'id 必須為非空陣列',
+            ]);
+        }
 
-        // 補發獎勵
-        $M_Promotion->reissuanceRewards($promotionId);
-        \App\Libraries\AuditProfiler::mark('reissuance_rewards_done');
+        if (empty($status)) {
+            return $this->response->setStatusCode(400)->setJSON([
+                'success' => false,
+                'msg'     => 'status 不可為空',
+            ]);
+        }
 
-        $result = array(
-            'success' => True,
-            'msg' => '批次審核成功',
-        );
+        $createdBy = (string) ($postData['user_id'] ?? $this->request->getIPAddress());
+
+        $model = new M_BatchAuditJob();
+        $jobId = $model->enqueue($promotionId, $status, $createdBy);
+
+        $result = [
+            'success' => true,
+            'msg'     => '批次審核已入列，排程將於下一分鐘內執行',
+            'job_id'  => $jobId,
+        ];
 
         $this->response->noCache();
         $this->response->setContentType('application/json');

@@ -1,0 +1,204 @@
+<?php
+
+namespace App\Models\Promotion;
+
+use CodeIgniter\Model;
+
+/**
+ * M_BatchAuditJob
+ *
+ * 管理 batch_audit_jobs 排程佇列表的 CRUD 操作。
+ */
+class M_BatchAuditJob extends Model
+{
+    protected $db;
+
+    public function __construct()
+    {
+        $this->db = \Config\Database::connect('promotion');
+    }
+
+    // -------------------------------------------------------------------------
+    // 入列
+    // -------------------------------------------------------------------------
+
+    /**
+     * 建立一筆 pending 任務，回傳新 job id。
+     *
+     * @param array  $promotionIds 待審核 promotion id 陣列
+     * @param string $auditStatus  目標審核狀態
+     * @param string $createdBy    觸發人識別（user_id 或 IP）
+     */
+    public function enqueue(array $promotionIds, string $auditStatus, string $createdBy = ''): int
+    {
+        $this->db->table('batch_audit_jobs')->insert([
+            'promotion_ids' => json_encode(array_values($promotionIds)),
+            'audit_status'  => $auditStatus,
+            'status'        => 'pending',
+            'total'         => count($promotionIds),
+            'processed'     => 0,
+            'created_by'    => $createdBy,
+            'created_at'    => date('Y-m-d H:i:s'),
+        ]);
+
+        return (int) $this->db->insertID();
+    }
+
+    // -------------------------------------------------------------------------
+    // 排程端讀取
+    // -------------------------------------------------------------------------
+
+    /**
+     * 取得最舊一筆 pending 任務並鎖定為 processing（防止重複執行）。
+     * 若無 pending 任務，回傳 null。
+     */
+    public function claimNextPending(): ?array
+    {
+        // 使用交易 + SELECT … FOR UPDATE 確保並發安全
+        $this->db->transStart();
+
+        $job = $this->db->table('batch_audit_jobs')
+            ->where('status', 'pending')
+            ->orderBy('id', 'ASC')
+            ->limit(1)
+            ->get()
+            ->getRowArray();
+
+        if (empty($job)) {
+            $this->db->transComplete();
+            return null;
+        }
+
+        $this->db->table('batch_audit_jobs')
+            ->where('id', $job['id'])
+            ->update([
+                'status'     => 'processing',
+                'started_at' => date('Y-m-d H:i:s'),
+            ]);
+
+        $this->db->transComplete();
+
+        $job['promotion_ids'] = json_decode($job['promotion_ids'], true) ?? [];
+        $job['failed_ids']    = $job['failed_ids'] ? (json_decode($job['failed_ids'], true) ?? []) : [];
+
+        return $job;
+    }
+
+    // -------------------------------------------------------------------------
+    // 排程端更新
+    // -------------------------------------------------------------------------
+
+    public function markCompleted(int $jobId, int $processed, array $failedIds = []): void
+    {
+        $status = empty($failedIds) ? 'completed' : 'failed';
+        $this->db->table('batch_audit_jobs')
+            ->where('id', $jobId)
+            ->update([
+                'status'       => $status,
+                'processed'    => $processed,
+                'failed_ids'   => empty($failedIds) ? null : json_encode($failedIds),
+                'completed_at' => date('Y-m-d H:i:s'),
+            ]);
+    }
+
+    public function markFailed(int $jobId, string $errorMessage, int $processed = 0): void
+    {
+        $this->db->table('batch_audit_jobs')
+            ->where('id', $jobId)
+            ->update([
+                'status'        => 'failed',
+                'processed'     => $processed,
+                'error_message' => mb_substr($errorMessage, 0, 2000),
+                'completed_at'  => date('Y-m-d H:i:s'),
+            ]);
+    }
+
+    // -------------------------------------------------------------------------
+    // 查詢 API 用
+    // -------------------------------------------------------------------------
+
+    /**
+     * 取得單筆任務。
+     */
+    public function getJob(int $jobId): ?array
+    {
+        $row = $this->db->table('batch_audit_jobs')
+            ->where('id', $jobId)
+            ->get()
+            ->getRowArray();
+
+        if (empty($row)) {
+            return null;
+        }
+
+        return $this->decodeRow($row);
+    }
+
+    /**
+     * 分頁列出任務。
+     *
+     * @param int    $page
+     * @param int    $perPage
+     * @param array  $filters  可過濾 status / created_by / date
+     * @return array{total: int, data: array}
+     */
+    public function listJobs(int $page = 1, int $perPage = 20, array $filters = []): array
+    {
+        $buildBase = function () use ($filters) {
+            $builder = $this->db->table('batch_audit_jobs');
+            if (!empty($filters['status'])) {
+                $builder->where('status', $filters['status']);
+            }
+            if (!empty($filters['created_by'])) {
+                $builder->like('created_by', $filters['created_by']);
+            }
+            if (!empty($filters['date'])) {
+                $builder->where('DATE(created_at)', $filters['date']);
+            }
+            return $builder;
+        };
+
+        $total = (int) $buildBase()->countAllResults();
+        $rows  = $buildBase()
+            ->orderBy('id', 'DESC')
+            ->limit($perPage, ($page - 1) * $perPage)
+            ->get()
+            ->getResultArray();
+
+        return [
+            'total' => $total,
+            'data'  => array_map([$this, 'decodeRow'], $rows),
+        ];
+    }
+
+    /**
+     * 統計各 status 筆數。
+     */
+    public function getStats(): array
+    {
+        $rows = $this->db->table('batch_audit_jobs')
+            ->select('status, COUNT(*) AS cnt')
+            ->groupBy('status')
+            ->get()
+            ->getResultArray();
+
+        $stats = ['pending' => 0, 'processing' => 0, 'completed' => 0, 'failed' => 0, 'total' => 0];
+        foreach ($rows as $row) {
+            $stats[$row['status']] = (int) $row['cnt'];
+            $stats['total']       += (int) $row['cnt'];
+        }
+
+        return $stats;
+    }
+
+    // -------------------------------------------------------------------------
+    // 內部工具
+    // -------------------------------------------------------------------------
+
+    private function decodeRow(array $row): array
+    {
+        $row['promotion_ids'] = $row['promotion_ids'] ? (json_decode($row['promotion_ids'], true) ?? []) : [];
+        $row['failed_ids']    = $row['failed_ids']    ? (json_decode($row['failed_ids'],    true) ?? []) : [];
+        return $row;
+    }
+}

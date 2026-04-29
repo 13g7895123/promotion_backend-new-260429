@@ -50,6 +50,24 @@ services:
     networks:
       - backend
 
+  scheduler:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    command: >
+      sh -c "while true; do php spark batch-audit:process; sleep 60; done"
+    volumes:
+      - ../:/var/www/html
+      - ./.env:/var/www/html/.env:ro
+    env_file:
+      - ./.env
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - backend
+
   phpmyadmin:
     image: phpmyadmin:5
     ports:
