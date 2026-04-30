@@ -25,6 +25,10 @@ class CreateBatchAuditJobsTable extends Migration
 {
     public function up(): void
     {
+        // batch_audit_jobs 屬於 promotion 資料庫，強制使用該連線
+        $this->db    = \Config\Database::connect('promotion');
+        $this->forge = \Config\Database::forge('promotion');
+
         $this->forge->addField([
             'id' => [
                 'type'           => 'INT',
@@ -91,6 +95,9 @@ class CreateBatchAuditJobsTable extends Migration
 
     public function down(): void
     {
+        $this->db    = \Config\Database::connect('promotion');
+        $this->forge = \Config\Database::forge('promotion');
+
         $this->forge->dropTable('batch_audit_jobs', true);
     }
 }
