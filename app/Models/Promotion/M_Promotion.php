@@ -88,6 +88,8 @@ class M_Promotion extends Model
      */
     public function updateData($promotionId, $data)
     {
+        $data['updated_at'] = date('Y-m-d H:i:s');
+
         $this->db->table('promotions')
             ->where('id', $promotionId)
             ->update($data);
