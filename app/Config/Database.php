@@ -47,9 +47,10 @@ class Database extends Config
     // 推廣
     public array $promotion = [
         'DSN'      => '',
-        'hostname' => '51.79.197.67',
-        'username' => 'sql_backend_pcga',
-        'password' => 'wsrzE6F45CyTwR86',
+        // 'hostname' => '51.79.197.67',
+        'hostname' => 'mysql',
+        'username' => 'root',
+        'password' => 'password',
         'database' => 'sql_backend_pcga',
         'DBDriver' => 'MySQLi',
         'DBPrefix' => '',
