@@ -256,8 +256,19 @@ class Promotion extends BaseController
     public function create()
     {
         $postData = $this->request->getJson(True);
+
+        // 相容 user / user_id 兩種欄位名
+        $userId = $postData['user_id'] ?? $postData['user'] ?? null;
+
+        if (empty($userId) || empty($postData['server'])) {
+            return $this->response->setStatusCode(400)->setJSON([
+                'success' => false,
+                'msg'     => 'user_id 與 server 為必填欄位',
+            ]);
+        }
+
         $promotion = array(
-            'user_id' => $postData['user'],
+            'user_id' => $userId,
             'server' => $postData['server'],
         );        
 
