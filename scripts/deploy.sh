@@ -45,7 +45,7 @@ echo ""
 
 # ── 3. 執行 Migration ──────────────────────────────────────────
 echo "[3/3] 執行 migrate..."
-docker compose -f "${COMPOSE_FILE}" exec -T "${PHP_SERVICE}" php spark migrate --all
+docker compose -f "${COMPOSE_FILE}" exec -T "${PHP_SERVICE}" php spark migrate
 echo ""
 
 echo "=============================="

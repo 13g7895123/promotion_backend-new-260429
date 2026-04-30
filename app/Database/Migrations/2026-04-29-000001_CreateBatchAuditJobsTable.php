@@ -86,7 +86,7 @@ class CreateBatchAuditJobsTable extends Migration
         $this->forge->addKey('id', true);
         $this->forge->addKey('status');
         $this->forge->addKey('created_at');
-        $this->forge->createTable('batch_audit_jobs');
+        $this->forge->createTable('batch_audit_jobs', true);
     }
 
     public function down(): void
