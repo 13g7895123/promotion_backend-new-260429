@@ -77,6 +77,10 @@ class BatchAuditProcess extends BaseCommand
             'last_ping' => date('Y-m-d H:i:s'),
             'pid'       => getmypid(),
         ]);
+        // 先刪除舊檔再寫入，避免不同容器使用者因 644 權限無法覆寫
+        if (file_exists($path)) {
+            @unlink($path);
+        }
         @file_put_contents($path, $data);
     }
 }
