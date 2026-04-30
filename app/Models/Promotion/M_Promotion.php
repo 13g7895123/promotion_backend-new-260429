@@ -502,9 +502,11 @@ class M_Promotion extends Model
         $where = array('id' => $promotionDetailIds);
         $this->M_PromotionItem->updateDataNew($updateData, $where);
 
-        // 取得更新後細項資料(檢查是否為成功狀態，用於後續獎勵處理)
+        // 取得更新後細項資料
+        // 修復 Bug1: 改為查詢「該推廣所有」success 細項（不限本批次），
+        // 避免 limit_number > 本批次筆數時誤判為未達標
         $where = array(
-            'id' => $promotionDetailIds,
+            'promotion_id' => $validPromotionIds,
             'status' => 'success',
         );
         $updatedPromotionDetails = $this->M_Model_Common->getData('promotion_items', $where, [], true);
@@ -584,15 +586,9 @@ class M_Promotion extends Model
         }
 
         // 處理成功的推廣資料 (發送獎勵與通知)
-        foreach ($successPromotion as $_val){
-            $id = $_val['id'];
-
-            if (!isset($promotionDataMap[$id])) {
-                continue;
-            }
-
-            $filterData = $promotionDataMap[$id];
-
+        // 修復 Bug2: 改為遍歷 $promotionDataMap（來源為 getPromotionAudit 的權威結果），
+        // 避免 $successPromotion 與 $promotionDataMap 不一致時靜默跳過
+        foreach ($promotionDataMap as $id => $filterData) {
             // 只有審核成功的推廣才處理後續邏輯
             if ($filterData['status'] === 'success'){
                 // 發送獎勵（第一個參數傳 promotion_id 以便 rewardLog 正確記錄）
