@@ -30,6 +30,9 @@ class BatchAuditProcess extends BaseCommand
         $M_Promotion = new M_Promotion();
         $jobCount    = 0;
 
+        // 更新心跳檔，讓 API 能判斷排程是否存活
+        $this->writeHeartbeat();
+
         CLI::write('[' . date('Y-m-d H:i:s') . '] BatchAuditProcess 啟動', 'cyan');
 
         while (true) {
@@ -61,5 +64,19 @@ class BatchAuditProcess extends BaseCommand
         }
 
         CLI::write('[' . date('Y-m-d H:i:s') . '] BatchAuditProcess 結束（處理 ' . $jobCount . ' 筆）', 'cyan');
+    }
+
+    /**
+     * 將目前時間寫入心跳檔，供 API 判斷排程容器是否存活。
+     * 檔案路徑：writable/scheduler_heartbeat.json
+     */
+    private function writeHeartbeat(): void
+    {
+        $path = WRITEPATH . 'scheduler_heartbeat.json';
+        $data = json_encode([
+            'last_ping' => date('Y-m-d H:i:s'),
+            'pid'       => getmypid(),
+        ]);
+        @file_put_contents($path, $data);
     }
 }

@@ -80,10 +80,11 @@ $routes->group('api', ['namespace' => 'App\Controllers\Jiachu'], function($route
         $routes->match(['get'],  'lifecycle/summary',       'LifecycleLog::summary');      // JSON 彙整統計
 
         // 批次審核排程佇列
-        $routes->match(['get'],  'batch-audit/jobs',            'BatchAuditJob::index');       // HTML 監控頁面
-        $routes->match(['get'],  'batch-audit/jobs/data',       'BatchAuditJob::data');        // JSON 分頁列表
-        $routes->match(['get'],  'batch-audit/jobs/stats',      'BatchAuditJob::stats');       // JSON 統計摘要
-        $routes->match(['get'],  'batch-audit/jobs/(:num)',     'BatchAuditJob::detail/$1');   // JSON 單筆詳細
+        $routes->match(['get'],  'batch-audit/jobs',                'BatchAuditJob::index');          // HTML 監控頁面
+        $routes->match(['get'],  'batch-audit/jobs/data',           'BatchAuditJob::data');           // JSON 分頁列表
+        $routes->match(['get'],  'batch-audit/jobs/stats',          'BatchAuditJob::stats');          // JSON 統計摘要
+        $routes->match(['get'],  'batch-audit/jobs/(:num)',         'BatchAuditJob::detail/$1');      // JSON 單筆詳細
+        $routes->match(['get'],  'batch-audit/scheduler/health',    'BatchAuditJob::schedulerHealth'); // JSON 排程健康狀態
         $routes->match(['get'],  'lifecycle/audit-events',  'LifecycleLog::auditEvents');  // JSON 批次審核事件
         
         $routes->match(['post'], 'server/single', 'Server::singleById');    

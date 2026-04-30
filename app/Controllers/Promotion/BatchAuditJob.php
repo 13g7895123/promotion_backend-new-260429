@@ -11,10 +11,11 @@ use App\Models\Promotion\M_BatchAuditJob;
  * 查詢批次審核排程佇列的狀態。
  *
  * Routes（位於 api/promotion 群組下）：
- *   GET  batch-audit/jobs           → index()       HTML 監控頁面
- *   GET  batch-audit/jobs/data      → data()        JSON 分頁列表
- *   GET  batch-audit/jobs/stats     → stats()       JSON 統計摘要
- *   GET  batch-audit/jobs/(:num)    → detail($id)   JSON 單筆詳細
+ *   GET  batch-audit/jobs                → index()           HTML 監控頁面
+ *   GET  batch-audit/jobs/data           → data()            JSON 分頁列表
+ *   GET  batch-audit/jobs/stats          → stats()           JSON 統計摘要
+ *   GET  batch-audit/jobs/(:num)         → detail($id)       JSON 單筆詳細
+ *   GET  batch-audit/scheduler/health    → schedulerHealth() JSON 排程健康狀態
  */
 class BatchAuditJob extends BaseController
 {
@@ -101,6 +102,78 @@ class BatchAuditJob extends BaseController
         return $this->response->setJSON([
             'success' => true,
             'data'    => $job,
+        ]);
+    }
+
+    // -------------------------------------------------------------------------
+    // Scheduler Health
+    // -------------------------------------------------------------------------
+
+    /**
+     * GET api/promotion/batch-audit/scheduler/health
+     *
+     * 讀取心跳檔（writable/scheduler_heartbeat.json）判斷排程容器是否存活。
+     * 排程每 60 秒執行一次，若超過 180 秒無心跳則視為異常。
+     *
+     * Response:
+     *   {
+     *     "success": true,
+     *     "data": {
+     *       "is_alive": true,
+     *       "last_ping": "2026-04-30 10:00:00",
+     *       "seconds_since_ping": 45,
+     *       "pid": 123,
+     *       "status": "healthy"   // "healthy" | "warning" | "dead" | "unknown"
+     *     }
+     *   }
+     */
+    public function schedulerHealth()
+    {
+        $path = WRITEPATH . 'scheduler_heartbeat.json';
+
+        if (! file_exists($path)) {
+            return $this->response->setJSON([
+                'success' => true,
+                'data'    => [
+                    'is_alive'           => false,
+                    'last_ping'          => null,
+                    'seconds_since_ping' => null,
+                    'pid'                => null,
+                    'status'             => 'unknown',
+                ],
+            ]);
+        }
+
+        $raw  = @file_get_contents($path);
+        $info = $raw ? json_decode($raw, true) : [];
+
+        $lastPing     = $info['last_ping'] ?? null;
+        $pid          = $info['pid'] ?? null;
+        $secondsAgo   = $lastPing ? (time() - strtotime($lastPing)) : null;
+
+        if ($secondsAgo === null) {
+            $status  = 'unknown';
+            $isAlive = false;
+        } elseif ($secondsAgo <= 120) {
+            $status  = 'healthy';
+            $isAlive = true;
+        } elseif ($secondsAgo <= 300) {
+            $status  = 'warning';
+            $isAlive = true;
+        } else {
+            $status  = 'dead';
+            $isAlive = false;
+        }
+
+        return $this->response->setJSON([
+            'success' => true,
+            'data'    => [
+                'is_alive'           => $isAlive,
+                'last_ping'          => $lastPing,
+                'seconds_since_ping' => $secondsAgo,
+                'pid'                => $pid,
+                'status'             => $status,
+            ],
         ]);
     }
 }

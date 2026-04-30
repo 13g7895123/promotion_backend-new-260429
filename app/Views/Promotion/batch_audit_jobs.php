@@ -85,6 +85,18 @@
     .modal-body dd { word-break: break-all; }
     pre.json { background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 12px; overflow-x: auto; margin-top: 12px; font-size: 12px; color: var(--text); white-space: pre-wrap; }
 
+    /* Scheduler health badge */
+    .health-badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; border-radius: 99px; font-size: 12px; font-weight: 700; }
+    .health-badge .dot-health { width: 8px; height: 8px; border-radius: 50%; }
+    .health-healthy  { background: rgba(52,211,153,.15); color: var(--green); }
+    .health-warning  { background: rgba(251,191,36,.15);  color: var(--yellow); }
+    .health-dead     { background: rgba(248,113,113,.15); color: var(--red); }
+    .health-unknown  { background: rgba(136,146,164,.15); color: var(--muted); }
+    .health-healthy  .dot-health { background: var(--green);  animation: pulse 2s infinite; }
+    .health-warning  .dot-health { background: var(--yellow); animation: pulse 1s infinite; }
+    .health-dead     .dot-health { background: var(--red); }
+    .health-unknown  .dot-health { background: var(--muted); }
+
     /* Auto-refresh indicator */
     .refresh-bar { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; }
     .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); animation: pulse 2s infinite; }
@@ -96,6 +108,7 @@
   <h1>批次審核排程監控</h1>
   <span class="subtitle">Batch Audit Job Queue</span>
   <div style="margin-left:auto; display:flex; gap:12px; align-items:center;">
+    <span id="scheduler-health" class="health-badge health-unknown"><span class="dot-health"></span>排程狀態載入中…</span>
     <div class="refresh-bar"><div class="dot"></div><span id="countdown">30s 後自動更新</span></div>
     <button class="btn btn-muted" onclick="loadAll()">立即刷新</button>
   </div>
@@ -222,7 +235,31 @@
   // ── 主要載入 ─────────────────────────────────────────────────
   async function loadAll() {
     startCountdown();
-    await Promise.all([loadStats(), loadData(currentPage)]);
+    await Promise.all([loadHealth(), loadStats(), loadData(currentPage)]);
+  }
+
+  async function loadHealth() {
+    const schedulerBase = BASE.replace(/\/jobs$/, '');
+    try {
+      const res  = await fetch(schedulerBase + '/scheduler/health');
+      const json = await res.json();
+      if (!json.success) return;
+      const d   = json.data;
+      const el  = document.getElementById('scheduler-health');
+      const statusMap = {
+        healthy : { cls: 'health-healthy', label: '排程運行中' },
+        warning : { cls: 'health-warning', label: '排程可能延遲' },
+        dead    : { cls: 'health-dead',    label: '排程已停止' },
+        unknown : { cls: 'health-unknown', label: '排程未啟動' },
+      };
+      const s    = statusMap[d.status] ?? statusMap.unknown;
+      const ago  = d.seconds_since_ping !== null ? `（${d.seconds_since_ping}s 前）` : '';
+      el.className = 'health-badge ' + s.cls;
+      el.innerHTML = `<span class="dot-health"></span>${s.label}${ago}`;
+      el.title = d.last_ping ? `最後心跳：${d.last_ping}` : '尚無心跳紀錄';
+    } catch (e) {
+      // silent — do not break the page if health check fails
+    }
   }
 
   async function loadStats() {
