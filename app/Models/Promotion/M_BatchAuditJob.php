@@ -188,7 +188,8 @@ class M_BatchAuditJob extends Model
         if (!empty($firstIdMap)) {
             $promoRows = $this->db->table('promotions')
                 ->join('player', 'player.id = promotions.user_id', 'left')
-                ->select('promotions.id, promotions.user_id, promotions.server, player.username, player.character_name')
+                ->join('server', 'server.code = promotions.server', 'left')
+                ->select('promotions.id, promotions.user_id, promotions.server, server.name as server_name, player.username, player.character_name')
                 ->whereIn('promotions.id', array_values($firstIdMap))
                 ->get()
                 ->getResultArray();
@@ -210,6 +211,7 @@ class M_BatchAuditJob extends Model
                 $decoded = $this->decodeRow($row);
                 $info    = $jobInfoMap[(int) $row['id']] ?? null;
                 $decoded['server']         = $info['server']         ?? null;
+                $decoded['server_name']    = $info['server_name']    ?? null;
                 $decoded['user_id']        = $info['user_id']        ?? null;
                 $decoded['username']       = $info['username']       ?? null;
                 $decoded['character_name'] = $info['character_name'] ?? null;
