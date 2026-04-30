@@ -54,6 +54,16 @@ class M_BatchAuditJob extends Model
      */
     public function claimNextPending(): ?array
     {
+        // 將卡在 processing 超過 5 分鐘的任務標記為 failed，防止永遠卡死
+        $this->db->table('batch_audit_jobs')
+            ->where('status', 'processing')
+            ->where('started_at <', date('Y-m-d H:i:s', strtotime('-5 minutes')))
+            ->update([
+                'status'        => 'failed',
+                'error_message' => 'Timeout: 執行超過 5 分鐘未完成，已自動標記為失敗（可能因 PHP 被強制中止）',
+                'completed_at'  => date('Y-m-d H:i:s'),
+            ]);
+
         // 使用交易 + SELECT … FOR UPDATE 確保並發安全
         $this->db->transStart();
 
@@ -165,9 +175,46 @@ class M_BatchAuditJob extends Model
             ->get()
             ->getResultArray();
 
+        // 補充每筆 job 的第一筆 promotion 的伺服器/帳號/角色資訊
+        $firstIdMap = [];
+        foreach ($rows as $row) {
+            $ids = json_decode($row['promotion_ids'], true) ?? [];
+            if (!empty($ids)) {
+                $firstIdMap[$row['id']] = (int) $ids[0];
+            }
+        }
+
+        $promotionInfoMap = [];
+        if (!empty($firstIdMap)) {
+            $promoRows = $this->db->table('promotions')
+                ->join('player', 'player.id = promotions.user_id', 'left')
+                ->select('promotions.id, promotions.user_id, promotions.server, player.username, player.character_name')
+                ->whereIn('promotions.id', array_values($firstIdMap))
+                ->get()
+                ->getResultArray();
+
+            foreach ($promoRows as $p) {
+                $promotionInfoMap[(int) $p['id']] = $p;
+            }
+        }
+
+        // job_id => promotion info 對照表
+        $jobInfoMap = [];
+        foreach ($firstIdMap as $jobId => $promoId) {
+            $jobInfoMap[$jobId] = $promotionInfoMap[$promoId] ?? null;
+        }
+
         return [
             'total' => $total,
-            'data'  => array_map([$this, 'decodeRow'], $rows),
+            'data'  => array_map(function ($row) use ($jobInfoMap) {
+                $decoded = $this->decodeRow($row);
+                $info    = $jobInfoMap[(int) $row['id']] ?? null;
+                $decoded['server']         = $info['server']         ?? null;
+                $decoded['user_id']        = $info['user_id']        ?? null;
+                $decoded['username']       = $info['username']       ?? null;
+                $decoded['character_name'] = $info['character_name'] ?? null;
+                return $decoded;
+            }, $rows),
         ];
     }
 
