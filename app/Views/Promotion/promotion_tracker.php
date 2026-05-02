@@ -240,7 +240,7 @@
       <span id="list-info">尚未查詢</span>
     </div>
     <div class="results-body" id="result-list">
-      <div class="state-loading">請輸入條件後查詢</div>
+      <div class="state-loading"><div class="spinner"></div><br>載入中…</div>
     </div>
     <div class="pagination" id="pagination" style="display:none"></div>
   </div>
@@ -272,6 +272,7 @@ let selectedId  = null;
   document.getElementById('f-to').value   = fmtDate(today);
   document.getElementById('f-from').value = fmtDate(from);
   loadServers();
+  doSearch(1);
 })();
 
 async function loadServers() {
