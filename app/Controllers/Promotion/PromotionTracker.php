@@ -106,20 +106,6 @@ class PromotionTracker extends BaseController
                 ->get()->getResultArray();
             $rewardSet = array_flip(array_column($rewardRows, 'promotion_id'));
 
-            // 關聯的 batch_audit_jobs 最新一筆狀態（用 JSON_CONTAINS）
-            $jobRows = $this->db->query(
-                'SELECT baj.status AS job_status, baj.error_message, baj.created_at AS job_created_at,
-                        baj.completed_at AS job_completed_at,
-                        JSON_UNQUOTE(JSON_EXTRACT(baj.promotion_ids, "$[0]")) AS first_promo_id
-                 FROM batch_audit_jobs baj
-                 WHERE id IN (
-                     SELECT MAX(id) FROM batch_audit_jobs
-                     WHERE JSON_CONTAINS(promotion_ids, CAST(? AS JSON))
-                     LIMIT 1
-                 )',
-                [json_encode($ids)]
-            )->getResultArray();
-
             // 取每個 promotion_id 最新的 job 資訊
             $jobMap = [];
             foreach ($ids as $pid) {

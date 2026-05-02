@@ -262,6 +262,13 @@ class Server extends BaseController
         $result = array('success' => False);
         $postData = $this->request->getJson(True);
 
+        if (empty($postData['id'])) {
+            $result['msg'] = '缺少必要參數 id';
+            $this->response->noCache();
+            $this->response->setContentType('application/json');
+            return $this->response->setJSON($result);
+        }
+
         $data = $this->M_Common_Model->getData('server', ['id' => $postData['id']]);
 
         if (empty($data)){
