@@ -79,6 +79,11 @@ $routes->group('api', ['namespace' => 'App\Controllers\Jiachu'], function($route
         $routes->match(['get'],  'lifecycle/data',          'LifecycleLog::data');         // JSON 時間軸資料
         $routes->match(['get'],  'lifecycle/summary',       'LifecycleLog::summary');      // JSON 彙整統計
 
+        // 推廣狀態追蹤器（單筆完整生命週期查詢）
+        $routes->match(['get'],  'tracker',                     'PromotionTracker::index');       // HTML 頁面
+        $routes->match(['get'],  'tracker/search',              'PromotionTracker::search');      // JSON 搜尋列表
+        $routes->match(['get'],  'tracker/detail/(:num)',       'PromotionTracker::detail/$1');   // JSON 單筆詳細
+
         // 批次審核排程佇列
         $routes->match(['get'],  'batch-audit/jobs',                'BatchAuditJob::index');          // HTML 監控頁面
         $routes->match(['get'],  'batch-audit/jobs/data',           'BatchAuditJob::data');           // JSON 分頁列表
