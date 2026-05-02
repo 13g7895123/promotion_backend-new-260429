@@ -66,6 +66,7 @@
   </style>
 </head>
 <body>
+<script>if(window.self!==window.top){var s=document.createElement('style');s.textContent='header{display:none!important}body{padding-top:0!important}';document.head.appendChild(s);}</script>
 <header>
   <h1>後台操作紀錄</h1>
   <span class="subtitle">API 操作與資料變更快照</span>

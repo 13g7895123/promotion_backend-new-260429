@@ -187,6 +187,7 @@
   </style>
 </head>
 <body>
+<script>if(window.self!==window.top){var s=document.createElement('style');s.textContent='header{display:none!important}body{padding-top:0!important}';document.head.appendChild(s);}</script>
 
 <header>
   <h1>🔍 推廣 <span>狀態追蹤器</span></h1>

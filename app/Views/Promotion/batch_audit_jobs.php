@@ -104,6 +104,7 @@
   </style>
 </head>
 <body>
+<script>if(window.self!==window.top){var s=document.createElement('style');s.textContent='header{display:none!important}body{padding-top:0!important}';document.head.appendChild(s);}</script>
 <header>
   <h1>批次審核排程監控</h1>
   <span class="subtitle">Batch Audit Job Queue</span>

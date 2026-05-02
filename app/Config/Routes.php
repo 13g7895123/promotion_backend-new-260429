@@ -74,6 +74,9 @@ $routes->group('api', ['namespace' => 'App\Controllers\Jiachu'], function($route
         $routes->match(['get'],  'logs/detail/(:num)', 'ApiLog::detail/$1'); // 單筆詳細
         $routes->match(['post'], 'logs/clean',     'ApiLog::clean');          // 清除舊 log
 
+        // 後台總覽
+        $routes->match(['get'],  'admin',                   'AdminPanel::index');         // 後台主頁面（整合側邊欄）
+
         // 後台操作紀錄
         $routes->match(['get'],  'operations',              'OperationLog::index');      // HTML 頁面
         $routes->match(['get'],  'operations/data',         'OperationLog::data');       // JSON 分頁列表

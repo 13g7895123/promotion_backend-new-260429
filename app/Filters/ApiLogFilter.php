@@ -42,6 +42,7 @@ class ApiLogFilter implements FilterInterface
         '/logs',
         '/operations',
         '/lifecycle',
+        '/admin',
     ];
 
     public function before(RequestInterface $request, $arguments = null)
