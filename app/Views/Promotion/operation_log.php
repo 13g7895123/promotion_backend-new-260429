@@ -76,29 +76,17 @@
   <section class="filters">
     <label>操作類型
       <select id="f-type">
-        <option value="">全部</option>
+        <option value="">全部操作</option>
         <option value="delete">刪除</option>
         <option value="delete_blocked">刪除阻擋</option>
         <option value="delete_failed">刪除失敗</option>
       </select>
     </label>
-    <label>HTTP Method
-      <select id="f-method">
-        <option value="">全部</option>
-        <option value="GET">GET</option>
-        <option value="POST">POST</option>
-        <option value="PUT">PUT</option>
-        <option value="DELETE">DELETE</option>
-      </select>
-    </label>
     <label>日期
       <input type="date" id="f-date" />
     </label>
-    <label>URI
-      <input type="text" id="f-uri" placeholder="/api/promotion/player/delete" style="width:240px" />
-    </label>
     <label>關鍵字
-      <input type="text" id="f-keyword" placeholder="ID / 帳號 / 摘要" style="width:200px" />
+      <input type="text" id="f-keyword" placeholder="玩家帳號 / ID / 摘要" style="width:220px" />
     </label>
     <label>每頁
       <select id="f-per-page">
@@ -108,8 +96,8 @@
       </select>
     </label>
     <label class="check">
-      <input type="checkbox" id="f-only-operation" />
-      只看有資料快照
+      <input type="checkbox" id="f-only-operation" checked />
+      只看操作紀錄（不含一般 API）
     </label>
     <button class="btn" onclick="loadData(1)">查詢</button>
     <button class="btn btn-muted" onclick="resetFilters()">重設</button>
@@ -121,16 +109,14 @@
         <tr>
           <th>ID</th>
           <th>時間</th>
-          <th>操作</th>
-          <th>摘要</th>
-          <th>API</th>
+          <th>操作類型</th>
+          <th>操作說明</th>
           <th>來源 IP</th>
-          <th>狀態</th>
-          <th>耗時</th>
+          <th>結果</th>
         </tr>
       </thead>
       <tbody id="tbody">
-        <tr><td colspan="8" class="empty">載入中...</td></tr>
+        <tr><td colspan="6" class="empty">載入中...</td></tr>
       </tbody>
     </table>
   </div>
@@ -162,9 +148,9 @@ function paramsFor(page) {
     page,
     per_page: document.getElementById('f-per-page').value,
     operation_type: document.getElementById('f-type').value,
-    method: document.getElementById('f-method').value,
+    method: '',
     date: document.getElementById('f-date').value,
-    uri: document.getElementById('f-uri').value,
+    uri: '',
     keyword: document.getElementById('f-keyword').value,
     only_with_operation: document.getElementById('f-only-operation').checked ? '1' : '',
   });
@@ -186,7 +172,7 @@ async function loadData(page = 1) {
 function renderRows(rows) {
   const tbody = document.getElementById('tbody');
   if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="8" class="empty">無資料</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" class="empty">無資料</td></tr>';
     return;
   }
 
@@ -194,14 +180,12 @@ function renderRows(rows) {
     const type = row.operation_type || 'api';
     const summary = row.operation_summary || `${row.controller || '-'}::${row.action || '-'}`;
     return `<tr onclick="showDetail(${row.id})">
-      <td class="mono">#${esc(row.id)}</td>
+      <td class="mono muted">#${esc(row.id)}</td>
       <td class="mono">${fmt(row.triggered_at)}</td>
       <td>${operationBadge(type)}</td>
-      <td class="summary">${esc(summary)}</td>
-      <td><div class="mono">${esc(row.method)} ${esc(row.uri)}</div><div class="muted">${esc(row.controller || '-')}::${esc(row.action || '-')}</div></td>
-      <td class="mono">${esc(row.ip_address || '-')}</td>
-      <td><span class="badge badge-${esc(row.status)}">${esc(row.status)}</span></td>
-      <td class="mono">${row.duration_ms ? esc(row.duration_ms) + ' ms' : '-'}</td>
+      <td class="summary" style="font-size:14px">${esc(summary)}</td>
+      <td class="mono muted">${esc(row.ip_address || '-')}</td>
+      <td><span class="badge badge-${esc(row.status)}">${statusLabel(row.status)}</span></td>
     </tr>`;
   }).join('');
 }
@@ -250,6 +234,11 @@ function operationBadge(type) {
   return `<span class="badge badge-${esc(type)}">${labels[type] || esc(type)}</span>`;
 }
 
+function statusLabel(status) {
+  const map = { completed: '成功', error: '錯誤', pending: '進行中' };
+  return map[status] || esc(status);
+}
+
 function changePage(delta) {
   const next = currentPage + delta;
   if (next >= 1 && next <= totalPages) loadData(next);
@@ -257,11 +246,9 @@ function changePage(delta) {
 
 function resetFilters() {
   document.getElementById('f-type').value = '';
-  document.getElementById('f-method').value = '';
   document.getElementById('f-date').value = '';
-  document.getElementById('f-uri').value = '';
   document.getElementById('f-keyword').value = '';
-  document.getElementById('f-only-operation').checked = false;
+  document.getElementById('f-only-operation').checked = true;
   loadData(1);
 }
 
@@ -288,7 +275,7 @@ function esc(value) {
   return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
 }
 
-['f-uri', 'f-keyword'].forEach(id => {
+['f-keyword'].forEach(id => {
   document.getElementById(id).addEventListener('keydown', event => {
     if (event.key === 'Enter') loadData(1);
   });
