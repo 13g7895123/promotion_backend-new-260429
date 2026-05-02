@@ -351,6 +351,13 @@
       return;
     }
     const d = json.data;
+    const retryCount = Number(d.retry_count || 0);
+    const maxRetries = Number(d.max_retries || 0);
+    const attemptsHtml = d.retry_errors && d.retry_errors.length ? `
+      <div style="margin-top:12px">
+        <p style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">Retry Errors</p>
+        <pre class="json">${JSON.stringify(d.retry_errors, null, 2)}</pre>
+      </div>` : '';
     document.getElementById('modal-body').innerHTML = `
       <dl>
         <dt>Job ID</dt>  <dd class="mono">#${d.id}</dd>
@@ -358,6 +365,8 @@
         <dt>目標狀態</dt><dd class="mono">${esc(d.audit_status)}</dd>
         <dt>總筆數</dt>  <dd class="mono">${d.total}</dd>
         <dt>已處理</dt>  <dd class="mono">${d.processed}</dd>
+        <dt>重試次數</dt><dd class="mono">${retryCount}/${maxRetries || '-'}</dd>
+        ${d.next_retry_at ? `<dt>下次重試</dt><dd class="mono">${fmt(d.next_retry_at)}</dd>` : ''}
         <dt>觸發人</dt>  <dd>${esc(d.created_by ?? '-')}</dd>
         <dt>入列時間</dt><dd class="mono">${fmt(d.created_at)}</dd>
         <dt>開始時間</dt><dd class="mono">${fmt(d.started_at)}</dd>
@@ -373,6 +382,7 @@
         <p style="font-size:11px;color:var(--red);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">Failed IDs</p>
         <pre class="json">${JSON.stringify(d.failed_ids, null, 2)}</pre>
       </div>` : ''}
+      ${attemptsHtml}
     `;
   }
 

@@ -11,6 +11,9 @@ use CodeIgniter\Model;
  */
 class M_BatchAuditJob extends Model
 {
+    private const DEFAULT_MAX_RETRIES = 3;
+    private const RETRY_DELAY_MINUTES = 5;
+
     protected $db;
 
     public function __construct()
@@ -37,6 +40,8 @@ class M_BatchAuditJob extends Model
             'status'        => 'pending',
             'total'         => count($promotionIds),
             'processed'     => 0,
+            'retry_count'   => 0,
+            'max_retries'   => self::DEFAULT_MAX_RETRIES,
             'created_by'    => $createdBy,
             'created_at'    => date('Y-m-d H:i:s'),
         ]);
@@ -54,21 +59,25 @@ class M_BatchAuditJob extends Model
      */
     public function claimNextPending(): ?array
     {
-        // 將卡在 processing 超過 5 分鐘的任務標記為 failed，防止永遠卡死
-        $this->db->table('batch_audit_jobs')
-            ->where('status', 'processing')
-            ->where('started_at <', date('Y-m-d H:i:s', strtotime('-5 minutes')))
-            ->update([
-                'status'        => 'failed',
-                'error_message' => 'Timeout: 執行超過 5 分鐘未完成，已自動標記為失敗（可能因 PHP 被強制中止）',
-                'completed_at'  => date('Y-m-d H:i:s'),
-            ]);
+        $this->markTimedOutProcessingJobs();
+        $now = date('Y-m-d H:i:s');
 
         // 使用交易 + SELECT … FOR UPDATE 確保並發安全
         $this->db->transStart();
 
         $job = $this->db->table('batch_audit_jobs')
-            ->where('status', 'pending')
+            ->groupStart()
+                ->where('status', 'pending')
+                ->orGroupStart()
+                    ->where('status', 'failed')
+                    ->where('retry_count < max_retries', null, false)
+                    ->groupStart()
+                        ->where('next_retry_at <=', $now)
+                        ->orWhere('next_retry_at', null)
+                    ->groupEnd()
+                ->groupEnd()
+            ->groupEnd()
+            ->orderBy('created_at', 'ASC')
             ->orderBy('id', 'ASC')
             ->limit(1)
             ->get()
@@ -82,8 +91,13 @@ class M_BatchAuditJob extends Model
         $this->db->table('batch_audit_jobs')
             ->where('id', $job['id'])
             ->update([
-                'status'     => 'processing',
-                'started_at' => date('Y-m-d H:i:s'),
+                'status'        => 'processing',
+                'processed'     => 0,
+                'failed_ids'    => null,
+                'error_message' => null,
+                'started_at'    => $now,
+                'completed_at'  => null,
+                'next_retry_at' => null,
             ]);
 
         $this->db->transComplete();
@@ -100,6 +114,11 @@ class M_BatchAuditJob extends Model
 
     public function markCompleted(int $jobId, int $processed, array $failedIds = []): void
     {
+        if (! empty($failedIds)) {
+            $this->markFailed($jobId, '部分 promotion id 處理失敗', $processed, $failedIds);
+            return;
+        }
+
         $status = empty($failedIds) ? 'completed' : 'failed';
         $this->db->table('batch_audit_jobs')
             ->where('id', $jobId)
@@ -107,19 +126,52 @@ class M_BatchAuditJob extends Model
                 'status'       => $status,
                 'processed'    => $processed,
                 'failed_ids'   => empty($failedIds) ? null : json_encode($failedIds),
+                'error_message' => null,
                 'completed_at' => date('Y-m-d H:i:s'),
+                'next_retry_at' => null,
             ]);
     }
 
-    public function markFailed(int $jobId, string $errorMessage, int $processed = 0): void
+    public function markFailed(int $jobId, string $errorMessage, int $processed = 0, array $failedIds = []): void
     {
+        $job = $this->db->table('batch_audit_jobs')
+            ->where('id', $jobId)
+            ->get()
+            ->getRowArray();
+
+        if (empty($job)) {
+            return;
+        }
+
+        $now          = date('Y-m-d H:i:s');
+        $retryCount   = (int) ($job['retry_count'] ?? 0) + 1;
+        $maxRetries   = max(1, (int) ($job['max_retries'] ?? self::DEFAULT_MAX_RETRIES));
+        $willRetry    = $retryCount < $maxRetries;
+        $nextRetryAt  = $willRetry ? date('Y-m-d H:i:s', strtotime('+' . self::RETRY_DELAY_MINUTES . ' minutes')) : null;
+        $safeMessage  = mb_substr($errorMessage, 0, 2000);
+        $retryErrors  = $this->decodeJsonArray($job['retry_errors'] ?? null);
+
+        $retryErrors[] = [
+            'attempt'       => $retryCount,
+            'message'       => $safeMessage,
+            'failed_ids'    => $failedIds,
+            'started_at'    => $job['started_at'] ?? null,
+            'completed_at'  => $now,
+            'next_retry_at' => $nextRetryAt,
+            'will_retry'    => $willRetry,
+        ];
+
         $this->db->table('batch_audit_jobs')
             ->where('id', $jobId)
             ->update([
                 'status'        => 'failed',
                 'processed'     => $processed,
-                'error_message' => mb_substr($errorMessage, 0, 2000),
-                'completed_at'  => date('Y-m-d H:i:s'),
+                'retry_count'   => $retryCount,
+                'failed_ids'    => empty($failedIds) ? null : json_encode($failedIds),
+                'error_message' => $safeMessage,
+                'retry_errors'  => json_encode($retryErrors),
+                'completed_at'  => $now,
+                'next_retry_at' => $nextRetryAt,
             ]);
     }
 
@@ -248,6 +300,34 @@ class M_BatchAuditJob extends Model
     {
         $row['promotion_ids'] = $row['promotion_ids'] ? (json_decode($row['promotion_ids'], true) ?? []) : [];
         $row['failed_ids']    = $row['failed_ids']    ? (json_decode($row['failed_ids'],    true) ?? []) : [];
+        $row['retry_errors']  = $this->decodeJsonArray($row['retry_errors'] ?? null);
         return $row;
+    }
+
+    private function markTimedOutProcessingJobs(): void
+    {
+        $staleJobs = $this->db->table('batch_audit_jobs')
+            ->where('status', 'processing')
+            ->where('started_at <', date('Y-m-d H:i:s', strtotime('-5 minutes')))
+            ->get()
+            ->getResultArray();
+
+        foreach ($staleJobs as $job) {
+            $this->markFailed(
+                (int) $job['id'],
+                'Timeout: 執行超過 5 分鐘未完成，已自動標記為失敗（可能因 PHP 被強制中止）',
+                (int) ($job['processed'] ?? 0)
+            );
+        }
+    }
+
+    private function decodeJsonArray(?string $json): array
+    {
+        if (empty($json)) {
+            return [];
+        }
+
+        $decoded = json_decode($json, true);
+        return is_array($decoded) ? $decoded : [];
     }
 }

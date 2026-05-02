@@ -372,6 +372,12 @@ function buildRow(row) {
     failed:     '<span class="badge badge-red">Job:失敗</span>',
   }[row.latest_job.job_status] || '';
 
+  const retryCount = row.latest_job ? Number(row.latest_job.retry_count || 0) : 0;
+  const maxRetries = row.latest_job ? Number(row.latest_job.max_retries || 0) : 0;
+  const retryBadge = row.latest_job && row.latest_job.job_status === 'failed' && retryCount < maxRetries
+    ? `<span class="badge badge-yellow">待重試 ${retryCount}/${maxRetries}</span>`
+    : '';
+
   const rewardBadge = row.has_reward ? '<span class="badge badge-purple">已派獎</span>' : '';
 
   return `
@@ -384,7 +390,7 @@ function buildRow(row) {
         ${row.character_name ? `<span class="rr-char">/ ${esc(row.character_name)}</span>` : ''}
         <span class="rr-server">${esc(row.server_name || row.server)}</span>
         <span style="margin-left:auto;display:flex;gap:4px">
-          ${statusBadge} ${jobBadge} ${rewardBadge}
+          ${statusBadge} ${jobBadge} ${retryBadge} ${rewardBadge}
         </span>
       </div>
       <div class="rr-bottom">
@@ -449,6 +455,12 @@ function buildDetail(d) {
   const hasAudit   = d.audit_jobs && d.audit_jobs.length > 0;
   const hasReward  = d.rewards    && d.rewards.length > 0;
   const latestJob  = hasAudit ? d.audit_jobs[0] : null;
+  const latestRetryCount = latestJob ? Number(latestJob.retry_count || 0) : 0;
+  const latestMaxRetries = latestJob ? Number(latestJob.max_retries || 0) : 0;
+  const latestWillRetry = latestJob && latestJob.status === 'failed' && latestRetryCount < latestMaxRetries;
+  const latestRetryMeta = latestJob && latestMaxRetries > 0
+    ? `，嘗試 ${latestRetryCount}/${latestMaxRetries}${latestWillRetry ? `，下次 ${fmtDT(latestJob.next_retry_at)}` : ''}`
+    : '';
   const jobStatusMap = {
     pending:    ['pending', '等待執行'],
     processing: ['active',  '執行中'],
@@ -461,7 +473,7 @@ function buildDetail(d) {
     {
       dotCls: hasAudit ? (latestJob.status === 'failed' ? 'failed' : 'done') : 'pending',
       title: '批次審核入列',
-      meta: hasAudit ? `Job #${latestJob.id}，${fmtDT(latestJob.created_at)}` : '尚未入列',
+      meta: hasAudit ? `Job #${latestJob.id}，${fmtDT(latestJob.created_at)}${latestRetryMeta}` : '尚未入列',
     },
     {
       dotCls: hasAudit && latestJob.started_at ? (latestJob.status === 'failed' ? 'failed' : 'done') : 'pending',
@@ -474,9 +486,9 @@ function buildDetail(d) {
       meta: p.status !== 'standby' ? `結果：${statusMap[p.status]}，${fmtDT(p.updated_at)}` : '等待審核',
     },
     {
-      dotCls: hasReward ? 'done' : (p.status === 'success' ? 'active' : 'pending'),
+      dotCls: hasReward ? 'done' : (latestWillRetry ? 'active' : (p.status === 'success' ? 'active' : 'pending')),
       title: '獎勵派送',
-      meta: hasReward ? `共 ${d.rewards.length} 筆，${fmtDT(d.rewards[0].created_at)}` : (p.status === 'success' ? '未找到獎勵記錄（可能待補發）' : '等待審核通過'),
+      meta: hasReward ? `共 ${d.rewards.length} 筆，${fmtDT(d.rewards[0].created_at)}` : (latestWillRetry ? `等待重試補發，下一次 ${fmtDT(latestJob.next_retry_at)}` : (p.status === 'success' ? '未找到獎勵記錄（可能待補發）' : '等待審核通過')),
     },
   ];
 
@@ -513,9 +525,25 @@ function buildDetail(d) {
       completed:  '<span class="badge badge-green">完成</span>',
       failed:     '<span class="badge badge-red">失敗</span>',
     }[job.status] || job.status;
+    const retryCount = Number(job.retry_count || 0);
+    const maxRetries = Number(job.max_retries || 0);
+    const willRetry = job.status === 'failed' && retryCount < maxRetries;
+    const retryHtml = maxRetries > 0 ? `
+        <div style="font-size:11px;color:${willRetry ? 'var(--warning)' : 'var(--muted)'};margin-top:4px">
+          重試：${retryCount}/${maxRetries}${willRetry ? ` ｜ 下次重試：${fmtDT(job.next_retry_at)}` : ''}
+        </div>` : '';
     const errHtml = job.error_message ? `<div style="color:var(--failure);font-size:12px;margin-top:4px">⚠ ${esc(job.error_message)}</div>` : '';
     const failedIdsHtml = job.failed_ids && job.failed_ids.length > 0
       ? `<div style="font-size:11px;color:var(--failure);margin-top:4px">失敗 IDs: ${job.failed_ids.join(', ')}</div>` : '';
+    const attemptsHtml = job.retry_errors && job.retry_errors.length > 0 ? `
+        <div style="margin-top:8px">
+          <div style="font-size:11px;color:var(--muted);margin-bottom:4px">嘗試紀錄</div>
+          ${job.retry_errors.map(attempt => `
+            <div style="font-size:11px;color:var(--muted);padding:6px 8px;border:1px solid var(--border);border-radius:4px;margin-top:4px;background:rgba(139,148,158,.06)">
+              <div><span class="mono">#${esc(attempt.attempt)}</span> ｜ ${fmtDT(attempt.started_at)} → ${fmtDT(attempt.completed_at)}${attempt.will_retry ? ` ｜ 下次 ${fmtDT(attempt.next_retry_at)}` : ' ｜ 已放棄重試'}</div>
+              <div style="color:var(--failure);margin-top:3px">${esc(attempt.message)}</div>
+            </div>`).join('')}
+        </div>` : '';
     return `
       <div style="padding:10px 0;border-bottom:1px solid var(--border)">
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
@@ -530,7 +558,7 @@ function buildDetail(d) {
         <div style="font-size:11px;color:var(--muted);margin-top:3px">
           包含推廣 IDs：${job.promotion_ids.join(', ')}
         </div>
-        ${errHtml}${failedIdsHtml}
+        ${retryHtml}${errHtml}${failedIdsHtml}${attemptsHtml}
       </div>`;
   }).join('');
 

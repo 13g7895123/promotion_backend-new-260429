@@ -111,13 +111,16 @@ class PromotionTracker extends BaseController
             $jobMap = [];
             foreach ($ids as $pid) {
                 $job = $this->db->query(
-                    'SELECT status AS job_status, error_message, created_at AS job_created_at, completed_at AS job_completed_at
+                    'SELECT status AS job_status, error_message, created_at AS job_created_at,
+                            started_at AS job_started_at, completed_at AS job_completed_at,
+                            retry_count, max_retries, next_retry_at, retry_errors
                      FROM batch_audit_jobs
                      WHERE JSON_CONTAINS(promotion_ids, ?, "$")
                      ORDER BY id DESC LIMIT 1',
                     [json_encode((string) $pid)]
                 )->getRowArray();
                 if ($job) {
+                    $job['retry_errors'] = $job['retry_errors'] ? (json_decode($job['retry_errors'], true) ?? []) : [];
                     $jobMap[$pid] = $job;
                 }
             }
@@ -185,6 +188,7 @@ class PromotionTracker extends BaseController
         foreach ($auditJobs as &$job) {
             $job['promotion_ids'] = json_decode($job['promotion_ids'], true) ?? [];
             $job['failed_ids']    = $job['failed_ids'] ? (json_decode($job['failed_ids'], true) ?? []) : [];
+            $job['retry_errors']  = ! empty($job['retry_errors']) ? (json_decode($job['retry_errors'], true) ?? []) : [];
         }
         unset($job);
 
