@@ -107,6 +107,7 @@ class PromotionTracker extends BaseController
             $rewardSet = array_flip(array_column($rewardRows, 'promotion_id'));
 
             // 取每個 promotion_id 最新的 job 資訊
+            // json_encode() 確保傳入的是 JSON 字串型別 "16065"，與資料庫存的 ["16065"] 型別一致
             $jobMap = [];
             foreach ($ids as $pid) {
                 $job = $this->db->query(
@@ -114,7 +115,7 @@ class PromotionTracker extends BaseController
                      FROM batch_audit_jobs
                      WHERE JSON_CONTAINS(promotion_ids, ?, "$")
                      ORDER BY id DESC LIMIT 1',
-                    [(string) $pid]
+                    [json_encode((string) $pid)]
                 )->getRowArray();
                 if ($job) {
                     $jobMap[$pid] = $job;
@@ -175,9 +176,10 @@ class PromotionTracker extends BaseController
             ->get()->getResultArray();
 
         // 3. 關聯的 batch_audit_jobs（搜尋包含此 promotion_id 的 JSON 陣列）
+        // json_encode() 確保傳入的是 JSON 字串型別 "16065"，與資料庫存的 ["16065"] 型別一致
         $auditJobs = $this->db->query(
             'SELECT * FROM batch_audit_jobs WHERE JSON_CONTAINS(promotion_ids, ?, "$") ORDER BY id DESC',
-            [(string) $id]
+            [json_encode((string) $id)]
         )->getResultArray();
 
         foreach ($auditJobs as &$job) {
