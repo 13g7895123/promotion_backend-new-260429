@@ -542,6 +542,7 @@ function buildDetail(d) {
             <div style="font-size:11px;color:var(--muted);padding:6px 8px;border:1px solid var(--border);border-radius:4px;margin-top:4px;background:rgba(139,148,158,.06)">
               <div><span class="mono">#${esc(attempt.attempt)}</span> ｜ ${fmtDT(attempt.started_at)} → ${fmtDT(attempt.completed_at)}${attempt.will_retry ? ` ｜ 下次 ${fmtDT(attempt.next_retry_at)}` : ' ｜ 已放棄重試'}</div>
               <div style="color:var(--failure);margin-top:3px">${esc(attempt.message)}</div>
+              ${attempt.error ? `<pre style="margin-top:6px;padding:8px;border:1px solid var(--border);border-radius:4px;background:rgba(13,17,23,.65);white-space:pre-wrap;color:var(--muted);overflow:auto">${esc(JSON.stringify(attempt.error, null, 2))}</pre>` : ''}
             </div>`).join('')}
         </div>` : '';
     return `

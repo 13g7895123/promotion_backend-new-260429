@@ -74,6 +74,11 @@ $routes->group('api', ['namespace' => 'App\Controllers\Jiachu'], function($route
         $routes->match(['get'],  'logs/detail/(:num)', 'ApiLog::detail/$1'); // 單筆詳細
         $routes->match(['post'], 'logs/clean',     'ApiLog::clean');          // 清除舊 log
 
+        // 後台操作紀錄
+        $routes->match(['get'],  'operations',              'OperationLog::index');      // HTML 頁面
+        $routes->match(['get'],  'operations/data',         'OperationLog::data');       // JSON 分頁列表
+        $routes->match(['get'],  'operations/detail/(:num)', 'OperationLog::detail/$1'); // 單筆詳細
+
         // 推廣生命週期 Log
         $routes->match(['get'],  'lifecycle',               'LifecycleLog::index');        // HTML 頁面
         $routes->match(['get'],  'lifecycle/data',          'LifecycleLog::data');         // JSON 時間軸資料

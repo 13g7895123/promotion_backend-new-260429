@@ -125,13 +125,90 @@ class Server extends BaseController
     public function delete()
     {
         $data = $this->request->getJSON(True);
+        $idList = is_array($data['id'] ?? null) ? array_values($data['id']) : [$data['id'] ?? null];
+
+        $serverRows = $this->db->table('server')
+            ->whereIn('id', $idList)
+            ->get()
+            ->getResultArray();
+        $serverCodes = array_values(array_filter(array_column($serverRows, 'code')));
+
+        $playerRows = empty($serverCodes) ? [] : $this->db->table('player')
+            ->whereIn('server', $serverCodes)
+            ->get()
+            ->getResultArray();
+        $promotionRows = empty($serverCodes) ? [] : $this->db->table('promotions')
+            ->whereIn('server', $serverCodes)
+            ->get()
+            ->getResultArray();
+        $serverImages = empty($serverCodes) ? [] : $this->db->table('server_image')
+            ->whereIn('server_code', $serverCodes)
+            ->get()
+            ->getResultArray();
+        $customizedDbRows = empty($serverCodes) ? [] : $this->db->table('customized_db')
+            ->whereIn('server_code', $serverCodes)
+            ->get()
+            ->getResultArray();
+        foreach ($customizedDbRows as &$dbRow) {
+            if (array_key_exists('password', $dbRow)) {
+                $dbRow['password'] = '********';
+            }
+        }
+        unset($dbRow);
+
+        $customizedFieldRows = empty($serverCodes) ? [] : $this->db->table('customized_field')
+            ->whereIn('server_code', $serverCodes)
+            ->get()
+            ->getResultArray();
+
+        if (! empty($promotionRows)) {
+            (new \App\Models\M_ApiLog())->recordOperation('delete_blocked', '刪除伺服器已阻擋：伺服器已有推廣紀錄', [
+                'table' => 'server',
+                'requested_ids' => $idList,
+                'server_codes' => $serverCodes,
+                'matched_servers' => $serverRows,
+                'related_promotions' => $promotionRows,
+                'related_players' => $playerRows,
+            ]);
+
+            $result = array(
+                'success' => False,
+                'msg' => '伺服器已有推廣紀錄，無法刪除。請保留伺服器與玩家資料以維持派獎與查詢關聯。',
+            );
+
+            $this->response->noCache();
+            $this->response->setContentType('application/json');
+            return $this->response->setJSON($result);
+        }
+
         $deleteId = $this->M_Server->deleteData($data['id']);
 
         $result = array('success' => False);
 
         if ($deleteId === False){
             $result['msg'] = '刪除失敗';
+
+            (new \App\Models\M_ApiLog())->recordOperation('delete_failed', '刪除伺服器失敗', [
+                'table' => 'server',
+                'requested_ids' => $idList,
+                'matched_servers' => $serverRows,
+            ]);
+
+            $this->response->noCache();
+            $this->response->setContentType('application/json');
+            return $this->response->setJSON($result);
         }
+
+        (new \App\Models\M_ApiLog())->recordOperation('delete', '刪除伺服器：' . count($serverRows) . ' 筆', [
+            'tables' => ['server', 'player', 'server_image'],
+            'requested_ids' => $idList,
+            'server_codes' => $serverCodes,
+            'deleted_servers' => $serverRows,
+            'deleted_players' => $playerRows,
+            'deleted_server_images' => $serverImages,
+            'related_customized_db' => $customizedDbRows,
+            'related_customized_fields' => $customizedFieldRows,
+        ]);
 
         $result['success'] = True;
         $result['msg'] = '刪除成功';

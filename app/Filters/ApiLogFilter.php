@@ -40,6 +40,7 @@ class ApiLogFilter implements FilterInterface
     /** 不需記錄的 URI 片段（部分比對） */
     private const SKIP_PATTERNS = [
         '/logs',
+        '/operations',
         '/lifecycle',
     ];
 

@@ -169,7 +169,48 @@ class Player extends BaseController
     public function delete()
     {
         $postData = $this->request->getJSON(True);
-        $this->M_Player->deleteData($postData['id']);
+
+        $ids = $postData['id'] ?? null;
+        if (empty($ids)) {
+            return $this->response->setJSON(['success' => False, 'msg' => '缺少玩家 ID']);
+        }
+
+        $idList = is_array($ids) ? array_values($ids) : [$ids];
+        $playerRows = $this->db->table('player')
+            ->whereIn('id', $idList)
+            ->get()
+            ->getResultArray();
+
+        $hasPromotions = $this->db->table('promotions')
+            ->whereIn('user_id', $idList)
+            ->countAllResults() > 0;
+
+        if ($hasPromotions) {
+            $promotionRows = $this->db->table('promotions')
+                ->whereIn('user_id', $idList)
+                ->get()
+                ->getResultArray();
+
+            (new \App\Models\M_ApiLog())->recordOperation('delete_blocked', '刪除玩家資料已阻擋：玩家已有推廣紀錄', [
+                'table' => 'player',
+                'requested_ids' => $idList,
+                'matched_rows' => $playerRows,
+                'related_promotions' => $promotionRows,
+            ]);
+
+            return $this->response->setJSON([
+                'success' => False,
+                'msg' => '玩家已有推廣紀錄，無法刪除。請保留玩家資料以維持派獎與查詢關聯。',
+            ]);
+        }
+
+        $this->M_Player->deleteData($ids);
+
+        (new \App\Models\M_ApiLog())->recordOperation('delete', '刪除玩家資料：' . count($playerRows) . ' 筆', [
+            'table' => 'player',
+            'requested_ids' => $idList,
+            'deleted_rows' => $playerRows,
+        ]);
 
         $result = array('success' => True);
 

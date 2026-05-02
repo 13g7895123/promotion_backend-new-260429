@@ -821,16 +821,24 @@ class M_Promotion extends Model
      */
     public function sendRewards($promotionId, $serverCode, $playerData)
     {
+        $playerData = $this->validateRewardPlayerData($promotionId, $serverCode, $playerData);
+
         // 連線至對方資料庫
         $M_CustomizedDb = new M_CustomizedDb($serverCode);
         $databaseData = $M_CustomizedDb->getDbInfo();
 
+        $accountField = $databaseData['account_field'] ?? '';
+        if ($accountField === '') {
+            throw new \RuntimeException("Reward dispatch failed: account field is not configured for server {$serverCode} (promotion_id: {$promotionId}).");
+        }
+
         // 寫入資料，預設一定有帳號
-        $insertData = array($databaseData['account_field'] => $playerData['username']);
+        $insertData = array($accountField => $playerData['username']);
 
         // 角色欄位
-        if ($databaseData['character_field'] != ''){
-            $insertData[$databaseData['character_field']] = $playerData['character_name'];
+        $characterField = $databaseData['character_field'] ?? '';
+        if ($characterField != ''){
+            $insertData[$characterField] = $playerData['character_name'] ?? '';
         }
 
         // 寫入資料
@@ -858,6 +866,10 @@ class M_Promotion extends Model
             ->get()
             ->getRowArray();
 
+        if (empty($promotion)) {
+            throw new \RuntimeException("Reissuance reward failed: promotion not found (promotion_id: {$promotionId}).");
+        }
+
         $serverCode = $promotion['server'];
 
         // 玩家資料
@@ -866,16 +878,24 @@ class M_Promotion extends Model
             ->get()
             ->getRowArray();
 
+        $playerData = $this->validateRewardPlayerData($promotionId, $serverCode, $playerData, $promotion['user_id']);
+
         // 連線至對方資料庫
         $M_CustomizedDb = new M_CustomizedDb($serverCode);
         $databaseData = $M_CustomizedDb->getDbInfo();
 
+        $accountField = $databaseData['account_field'] ?? '';
+        if ($accountField === '') {
+            throw new \RuntimeException("Reissuance reward failed: account field is not configured for server {$serverCode} (promotion_id: {$promotionId}).");
+        }
+
         // 寫入資料，預設一定有帳號
-        $insertData = array($databaseData['account_field'] => $playerData['username']);
+        $insertData = array($accountField => $playerData['username']);
 
         // 角色欄位
-        if ($databaseData['character_field'] != ''){
-            $insertData[$databaseData['character_field']] = $playerData['character_name'];
+        $characterField = $databaseData['character_field'] ?? '';
+        if ($characterField != ''){
+            $insertData[$characterField] = $playerData['character_name'] ?? '';
         }
 
         // 寫入資料
@@ -888,6 +908,21 @@ class M_Promotion extends Model
         $this->reissuanceRewardLog($promotionId, $playerData['id'], $serverCode, $insertData, $insertId);
 
         return true;
+    }
+
+    private function validateRewardPlayerData($promotionId, $serverCode, $playerData, $expectedPlayerId = null): array
+    {
+        if (! is_array($playerData) || empty($playerData)) {
+            $playerHint = $expectedPlayerId !== null ? ", player_id: {$expectedPlayerId}" : '';
+            throw new \RuntimeException("Reward dispatch failed: player data not found for promotion_id {$promotionId}{$playerHint}, server {$serverCode}. The promotion is success but the player record is missing, so the reward account cannot be determined.");
+        }
+
+        $playerId = $playerData['id'] ?? $playerData['user_id'] ?? $expectedPlayerId ?? 'unknown';
+        if (! array_key_exists('username', $playerData) || $playerData['username'] === null || $playerData['username'] === '') {
+            throw new \RuntimeException("Reward dispatch failed: player username is missing for promotion_id {$promotionId}, player_id {$playerId}, server {$serverCode}.");
+        }
+
+        return $playerData;
     }
 
     /**

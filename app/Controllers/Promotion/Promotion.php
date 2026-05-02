@@ -294,9 +294,20 @@ class Promotion extends BaseController
     {
         $postData = $this->request->getJson(True);
         $promotionId = $postData['id'];
+        $idList = is_array($promotionId) ? array_values($promotionId) : [$promotionId];
+
+        $promotionRows = $this->M_Common->getData('promotions', ['id' => $idList], [], true);
+        $itemRows = $this->M_Common->getData('promotion_items', ['promotion_id' => $idList], [], true);
 
         $M_Promotion = new M_Promotion();
         $M_Promotion->deleteData($promotionId);
+
+        (new \App\Models\M_ApiLog())->recordOperation('delete', '刪除推廣資料：' . count($promotionRows) . ' 筆', [
+            'tables' => ['promotions', 'promotion_items'],
+            'requested_ids' => $idList,
+            'deleted_promotions' => $promotionRows,
+            'deleted_items' => $itemRows,
+        ]);
 
         $result = array(
             'success' => True,

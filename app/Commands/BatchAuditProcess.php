@@ -54,7 +54,7 @@ class BatchAuditProcess extends BaseCommand
                 $model->markCompleted($jobId, count($job['promotion_ids']));
                 CLI::write("  ✔ Job #{$jobId} 完成", 'green');
             } catch (\Throwable $e) {
-                $model->markFailed($jobId, $e->getMessage());
+                $model->markFailed($jobId, $e->getMessage(), 0, [], $e);
                 CLI::write("  ✘ Job #{$jobId} 失敗：" . $e->getMessage(), 'red');
             }
         }

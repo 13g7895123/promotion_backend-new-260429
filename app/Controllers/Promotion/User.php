@@ -159,14 +159,46 @@ class User extends BaseController
         $result = array('success' => False);
         $postData = $this->request->getJSON(True);
 
-        $userId = $this->M_User->deleteData($postData['id']);
+        $ids = $postData['id'] ?? null;
+        $idList = is_array($ids) ? array_values($ids) : [$ids];
+
+        $deletedUsers = $this->db->table('users')
+            ->whereIn('id', $idList)
+            ->get()
+            ->getResultArray();
+        foreach ($deletedUsers as &$user) {
+            unset($user['password']);
+        }
+        unset($user);
+
+        $deletedPermissions = $this->db->table('user_server_permissions')
+            ->whereIn('user_id', $idList)
+            ->get()
+            ->getResultArray();
+
+        $userId = $this->M_User->deleteData($ids);
 
         if ($userId === 0) {
             $result['msg'] = '刪除失敗';
+
+            (new \App\Models\M_ApiLog())->recordOperation('delete_failed', '刪除後台使用者失敗', [
+                'table' => 'users',
+                'requested_ids' => $idList,
+                'matched_rows' => $deletedUsers,
+                'related_permissions' => $deletedPermissions,
+            ]);
+
             $this->response->noCache();
             $this->response->setContentType('application/json');
             return $this->response->setJSON($result);
         }
+
+        (new \App\Models\M_ApiLog())->recordOperation('delete', '刪除後台使用者：' . count($deletedUsers) . ' 筆', [
+            'tables' => ['users', 'user_server_permissions'],
+            'requested_ids' => $idList,
+            'deleted_users' => $deletedUsers,
+            'deleted_permissions' => $deletedPermissions,
+        ]);
 
         $result['success'] = True;
         $result['msg'] = '刪除成功';

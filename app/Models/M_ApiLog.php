@@ -42,6 +42,29 @@ class M_ApiLog extends Model
     }
 
     /**
+     * 記錄目前 API 請求對資料造成的操作摘要與快照。
+     */
+    public function recordOperation(string $type, string $summary, array $data = [], ?int $logId = null): void
+    {
+        $id = $logId ?? \App\Filters\ApiLogFilter::getCurrentLogId();
+        if ($id === null) {
+            return;
+        }
+
+        try {
+            $this->db->table($this->table)
+                ->where('id', $id)
+                ->update([
+                    'operation_type'    => $type,
+                    'operation_summary' => mb_substr($summary, 0, 500, 'UTF-8'),
+                    'operation_data'    => json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                ]);
+        } catch (\Throwable $e) {
+            // 操作紀錄失敗不可影響原 API 行為。
+        }
+    }
+
+    /**
      * 分頁取得 log 列表，支援 status / method / uri / date 篩選。
      *
      * @return array{total: int, data: array}
@@ -61,6 +84,52 @@ class M_ApiLog extends Model
         }
         if (!empty($filters['date'])) {
             $builder->where('DATE(triggered_at)', $filters['date']);
+        }
+
+        $total  = (int) $builder->countAllResults(false);
+        $offset = ($page - 1) * $perPage;
+
+        $rows = $builder
+            ->orderBy('id', 'DESC')
+            ->limit($perPage, $offset)
+            ->get()
+            ->getResultArray();
+
+        return ['total' => $total, 'data' => $rows];
+    }
+
+    /**
+     * 分頁取得操作紀錄列表，沿用 api_logs 並補充 operation_* 欄位。
+     *
+     * @return array{total: int, data: array}
+     */
+    public function getOperationLogs(int $page = 1, int $perPage = 50, array $filters = []): array
+    {
+        $builder = $this->db->table($this->table)
+            ->select('id, method, uri, controller, action, ip_address, status, response_code, triggered_at, completed_at, duration_ms, operation_type, operation_summary');
+
+        if (!empty($filters['operation_type'])) {
+            $builder->where('operation_type', $filters['operation_type']);
+        }
+        if (!empty($filters['method'])) {
+            $builder->where('method', strtoupper($filters['method']));
+        }
+        if (!empty($filters['uri'])) {
+            $builder->like('uri', $filters['uri']);
+        }
+        if (!empty($filters['date'])) {
+            $builder->where('DATE(triggered_at)', $filters['date']);
+        }
+        if (!empty($filters['keyword'])) {
+            $escaped = addcslashes($filters['keyword'], '\\%_');
+            $builder->groupStart()
+                ->like('operation_summary', $escaped, 'both', null, false)
+                ->orLike('request_data', $escaped, 'both', null, false)
+                ->orLike('operation_data', $escaped, 'both', null, false)
+                ->groupEnd();
+        }
+        if (!empty($filters['only_with_operation'])) {
+            $builder->where('operation_type IS NOT NULL', null, false);
         }
 
         $total  = (int) $builder->countAllResults(false);

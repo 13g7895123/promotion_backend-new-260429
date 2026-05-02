@@ -132,7 +132,7 @@ class M_BatchAuditJob extends Model
             ]);
     }
 
-    public function markFailed(int $jobId, string $errorMessage, int $processed = 0, array $failedIds = []): void
+    public function markFailed(int $jobId, string $errorMessage, int $processed = 0, array $failedIds = [], ?\Throwable $throwable = null): void
     {
         $job = $this->db->table('batch_audit_jobs')
             ->where('id', $jobId)
@@ -148,10 +148,10 @@ class M_BatchAuditJob extends Model
         $maxRetries   = max(1, (int) ($job['max_retries'] ?? self::DEFAULT_MAX_RETRIES));
         $willRetry    = $retryCount < $maxRetries;
         $nextRetryAt  = $willRetry ? date('Y-m-d H:i:s', strtotime('+' . self::RETRY_DELAY_MINUTES . ' minutes')) : null;
-        $safeMessage  = mb_substr($errorMessage, 0, 2000);
+        $safeMessage  = mb_substr($this->normalizeErrorMessage($errorMessage), 0, 2000);
         $retryErrors  = $this->decodeJsonArray($job['retry_errors'] ?? null);
 
-        $retryErrors[] = [
+        $attemptError = [
             'attempt'       => $retryCount,
             'message'       => $safeMessage,
             'failed_ids'    => $failedIds,
@@ -160,6 +160,13 @@ class M_BatchAuditJob extends Model
             'next_retry_at' => $nextRetryAt,
             'will_retry'    => $willRetry,
         ];
+
+        $errorDetails = $this->buildThrowableDetails($throwable);
+        if (! empty($errorDetails)) {
+            $attemptError['error'] = $errorDetails;
+        }
+
+        $retryErrors[] = $attemptError;
 
         $this->db->table('batch_audit_jobs')
             ->where('id', $jobId)
@@ -329,5 +336,39 @@ class M_BatchAuditJob extends Model
 
         $decoded = json_decode($json, true);
         return is_array($decoded) ? $decoded : [];
+    }
+
+    private function normalizeErrorMessage(string $message): string
+    {
+        if (str_contains($message, 'player data not found') || str_contains($message, 'player username is missing')) {
+            return '使用者資料已不存在';
+        }
+
+        return $message;
+    }
+
+    private function buildThrowableDetails(?\Throwable $throwable): array
+    {
+        if ($throwable === null) {
+            return [];
+        }
+
+        $trace = [];
+        foreach ($throwable->getTrace() as $frame) {
+            $trace[] = [
+                'file'     => $frame['file'] ?? null,
+                'line'     => $frame['line'] ?? null,
+                'function' => ($frame['class'] ?? '') . ($frame['type'] ?? '') . ($frame['function'] ?? ''),
+            ];
+        }
+
+        return [
+            'type'    => get_class($throwable),
+            'code'    => $throwable->getCode(),
+            'message' => $throwable->getMessage(),
+            'file'    => $throwable->getFile(),
+            'line'    => $throwable->getLine(),
+            'trace'   => $trace,
+        ];
     }
 }
